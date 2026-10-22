@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Churn + uplift — что сказать</title>
+  <style>
+    :root {
+      --bg:#0c1017; --card:#151c27; --line:#2a3544;
+      --text:#e8eef4; --muted:#8b9aab;
+      --accent:#4d9fff; --bad:#e85d5d; --ok:#3ecf8e; --warn:#e8b84a;
+      --font:"Segoe UI", system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:var(--font); background:var(--bg); color:var(--text); line-height:1.5; }
+    .wrap { max-width:920px; margin:0 auto; padding:28px 16px 72px; }
+    .day { color:var(--accent); font-size:.75rem; letter-spacing:.14em; text-transform:uppercase; }
+    h1 { font-size:1.55rem; margin:6px 0 8px; }
+    h2 { font-size:1.12rem; margin:28px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--line); }
+    .sub { color:var(--muted); margin:0 0 18px; }
+    .q { background:var(--card); border:1px solid var(--line); border-left:4px solid var(--accent); border-radius:10px; padding:14px 16px; margin:12px 0; }
+    .q .ask { color:var(--muted); font-size:.82rem; margin-bottom:6px; }
+    .kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:14px 0; }
+    @media (max-width:720px) { .kpis { grid-template-columns:1fr 1fr; } }
+    .kpi { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; }
+    .kpi .v { font-size:1.35rem; font-weight:700; }
+    .kpi .l { color:var(--muted); font-size:.78rem; margin-top:4px; }
+    .bad .v { color:var(--bad); } .ok .v { color:var(--ok); } .warn .v { color:var(--warn); } .info .v { color:var(--accent); }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin:12px 0; }
+    table { width:100%; border-collapse:collapse; font-size:.88rem; }
+    th, td { padding:7px 8px; border-bottom:1px solid var(--line); text-align:left; }
+    th { color:var(--muted); font-size:.75rem; text-transform:uppercase; }
+    .script { background:#101820; border:1px dashed var(--line); border-radius:10px; padding:14px; }
+    .script p { margin:0 0 10px; }
+    code { color:#9fd0ff; font-family:Consolas,monospace; font-size:.9em; }
+    ul { margin:6px 0 0; padding-left:1.15rem; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="day">Защита · таргет + uplift + бюджет</div>
+  <h1>Отток: своё определение, свой сценарий, своя выгода</h1>
+  <p class="sub">Не используем <code>churn_customers_360.is_churned</code> (там просто «тишина 31 день»). Своё правило по gaps / return rate.</p>
+
+  <div class="kpis">
+    <div class="kpi info"><div class="v">90д + лаг 6</div><div class="l">горизонт · target с snap+6</div></div>
+    <div class="kpi bad"><div class="v">4.9 → 7.7%</div><div class="l">churn июн → сен 2025</div></div>
+    <div class="kpi warn"><div class="v">8 139 → 23 793</div><div class="l">комиссия карты, 1 июл 2025</div></div>
+    <div class="kpi ok"><div class="v">AUC 0.89</div><div class="l">OOT, не random split</div></div>
+  </div>
+
+  <h2>Правило таргета (часть 1)</h2>
+  <div class="card">
+    <p><strong>target = 1</strong>, если у клиента, живого на snapshot, <strong>нет approved-операции</strong> в следующие <strong>90 дней</strong>.</p>
+    <ul>
+      <li><b>Почему не 30:</b> после 28 дней тишины ещё <b>83%</b> возвращаются. Витрина 360 врёт.</li>
+      <li><b>Почему 90:</b> p99 gap = 37 дней (ритм), return на 91 дне уже <b>~26%</b>. Это уход.</li>
+      <li><b>Лаг 6 дней после snap:</b> target с <code>snap+6</code> (задержка кампании). Фичи — до snap.</li>
+      <li><b>Train:</b> snap 2025-06-30, метка 06.07–04.10.</li>
+      <li><b>Test:</b> snap 2025-09-25, метка 01.10–30.12. Out-of-time, не random.</li>
+    </ul>
+    <p>В выборку: tenure ≥ 60, approved за 90д до <b>asof</b>, окно закрыто. Не в фичах: 360, NPS ноя–дек, дни лага и любое будущее.</p>
+  </div>
+
+  <h2>Вопрос 1. Какой сценарий: с кем взаимодействовали и нет</h2>
+  <div class="q">
+    <div class="ask">Сказать вслух</div>
+    <div class="script">
+      <p>Мы смотрим <b>winback среди уже затихших 30–90 дней</b> — именно туда исторически летели кампании <code>FEE_WAIVER_3M</code>, <code>WINBACK_*</code>, <code>CALL_RETENTION</code>.</p>
+      <p><b>Treatment</b> — им написали / позвонили в этом месяце (3 305 человек за всю историю, по одному контакту).</p>
+      <p><b>Control</b> — такие же по давности 30–90 дней, <b>без</b> контакта.</p>
+      <p><b>Что случилось после:</b> control в 71% случаев снова платит за 90 дней (это естественная пауза). Treatment — только 4%. Даже <code>responded=1</code> не возвращает в транзакции (~4%).</p>
+      <p>Это не «кампания убивает». Это <b>селекция</b>: писали тем, кто уже почти ушёл, а не тем, кто ещё жив и собирается уйти. Поэтому дальше модель — <b>prevention</b> на живых at-risk, а не повтор того же winback.</p>
+    </div>
+  </div>
+  <table>
+    <thead><tr><th>Группа</th><th>N (мес. срезы)</th><th>Вернулись за 90д</th></tr></thead>
+    <tbody>
+      <tr><td>Не писали (control), тишина 30–90</td><td>18 894</td><td><strong>71%</strong></td></tr>
+      <tr><td>Писали (treatment)</td><td>1 516</td><td><strong>4%</strong></td></tr>
+      <tr><td>Тишина 30–45, control</td><td>11 065</td><td>82%</td></tr>
+      <tr><td>Тишина 30–45, treatment</td><td>894</td><td>3%</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Вопрос 2. Как посчитали выгоду удержания</h2>
+  <div class="q">
+    <div class="ask">Не говорить «средний LTV по рынку»</div>
+    <div class="script">
+      <p>Выгода = <b>наша маржа за горизонт, который умеем наблюдать</b>, не отраслевой бенчмарк.</p>
+      <p>Из <code>churn_tariff_changes</code>: комиссия карты <b>8 139 → 23 793 сум</b> с 1 июля 2025 (причина роста оттока).</p>
+      <p>Из <code>churn_subscriptions</code>: если подписка активна на snap — плюс ~<b>45 693</b> сум/мес (факт цены плана).</p>
+      <p><code>value_retain_90d = 3 × (комиссия_карты + подписка_если_есть)</code></p>
+      <p>Почему ×3: горизонт таргета 90 дней. Если удержали — банк точно получает квартал комиссий. Дальше жизнь — бонус, его не рисуем «с рынка».</p>
+      <p>Ожидаемые потери без действий: на test-срезе 956 ушедших × их value ≈ <b>74.5 млн сум</b> за квартал.</p>
+    </div>
+  </div>
+
+  <h2>Вопрос 3. Метрики и трешхолд (без «среднего по рынку»)</h2>
+  <div class="q">
+    <div class="ask">Сказать вслух</div>
+    <div class="script">
+      <p>Accuracy / порог 0.5 не используем: класс 6%, бюджет не на всех.</p>
+      <p><b>Метрики:</b> ROC-AUC и PR-AUC на <b>следующем срезе</b>. AUC <b>0.886</b>, AP <b>0.422</b> при базе ~0.074.</p>
+      <p><b>Трешхолд = размер бюджета</b>, не вероятность 0.5. Сортируем по <code>p(churn) × value_retain_90d</code> — сначала дорогие и рискованные.</p>
+      <p>Top-200 по ожидаемой потере: 77 реальных уходов, <b>~20 млн сум</b> value. Top-500: 149 уходов, ~30 млн.</p>
+      <p>Кому звонить: высокий p и высокая маржа, ещё <b>живые</b> (были транзакции в последние 90 дней). Не тратить слот на уже тихих 60–90 дней — исторический winback их не поднимает.</p>
+    </div>
+  </div>
+
+  <h2>Почему отток вырос</h2>
+  <div class="card">
+    <ul>
+      <li>Июнь 2025: <b>4.92%</b> → июль <b>6.39%</b> → август 7.22% → сентябрь <b>7.72%</b>.</li>
+      <li>Лето 2024 такого скачка не дало (июль 6.42 → август 6.13). Это не «просто сезон».</li>
+      <li>1 июля 2025 массовая <code>tariff_revision_2025</code>: комиссия выросла почти в 3 раза.</li>
+    </ul>
+  </div>
+
+  <h2>Свои фичи (не «ещё один txn_cnt»)</h2>
+  <div class="card">
+    <p>На защите назови 5–6 и гипотезу одной фразой. Полный словарь: <code>feature_dictionary.csv</code>.</p>
+    <table>
+      <thead><tr><th>Фича</th><th>Что измеряет</th></tr></thead>
+      <tbody>
+        <tr><td><code>rhythm_break</code></td><td>Тишина / <b>свой</b> медианный gap — сломался ли ритм именно этого человека</td></tr>
+        <tr><td><code>pause_is_record</code></td><td>Текущая пауза длиннее любой за год</td></tr>
+        <tr><td><code>grocery_fade</code></td><td>Продукты пропали — карта выпала из быта</td></tr>
+        <tr><td><code>digital_ghost</code></td><td>Логин в приложении есть, операций нет</td></tr>
+        <tr><td><code>missed_payroll</code></td><td>Зарплатник, а salary_in за 90 дней нет</td></tr>
+        <tr><td><code>fee_pain</code></td><td>Жалоба на комиссию + отмена «дорого» + затухание после 1 июля</td></tr>
+        <tr><td><code>autopay_broken</code></td><td>Коммуналка шла и оборвалась</td></tr>
+        <tr><td><code>deposit_drain</code></td><td>С вклада снимает больше, чем кладёт</td></tr>
+        <tr><td><code>unbundling</code></td><td>Закрыл продукт или подписку</td></tr>
+        <tr><td><code>expiry_soon</code></td><td>Карта истекает ≤45 дней — удобно не перевыпускать</td></tr>
+        <tr><td><code>mono_fade</code> / <code>bank_switch_score</code></td><td>Лестница −3→−2→−1 + grocery/MCC сжались: карта перестаёт быть основной (другой банк), не обнал</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Файлы к сдаче</h2>
+  <div class="card">
+    <ul>
+      <li><code>churn_hw/churn_target_uplift.ipynb</code> — ход работы</li>
+      <li><code>churn_hw/data/churn_train_2025-06-30.csv</code> / <code>churn_test_2025-09-30.csv</code></li>
+      <li><code>churn_hw/data/uplift_silent_30_90.csv</code>, <code>churn_monthly.csv</code></li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>

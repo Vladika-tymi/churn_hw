@@ -1,0 +1,3 @@
+bucket,n_customers,n_alive_like,churn_pct
+main_>=60,17004,12265,6.43
+onboarding_<60,2996,744,11.69
